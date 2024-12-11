@@ -15,4 +15,3 @@ Flask
 gunicorn
 qrcode
 pillow
-sqlite3
