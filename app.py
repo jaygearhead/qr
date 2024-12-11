@@ -3,7 +3,7 @@ import qrcode
 from io import BytesIO
 import sqlite3
 
-app = Flask(__QR__)
+app = Flask(__name__)
 
 # Initialize SQLite database
 DB_FILE = 'qr_codes.db'
