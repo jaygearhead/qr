@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, redirect, url_for
+from flask import Flask, request, jsonify, redirect, url_for, render_template_string
 import qrcode
 from io import BytesIO
 import sqlite3
@@ -21,6 +21,14 @@ def init_db():
     conn.commit()
     conn.close()
 
+def get_all_ids():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('SELECT unique_id, target_url FROM qr_codes')
+    results = cursor.fetchall()
+    conn.close()
+    return results
+
 def get_target_url(unique_id):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -40,14 +48,42 @@ def set_target_url(unique_id, target_url):
     conn.commit()
     conn.close()
 
+@app.route('/')
+def home():
+    # Show all unique IDs and their associated URLs
+    all_ids = get_all_ids()
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head><title>Dynamic QR Code Manager</title></head>
+    <body>
+        <h1>Dynamic QR Code Manager</h1>
+        <h2>Create or Update a QR Code</h2>
+        <form action="/generate" method="post">
+            <label for="unique_id">Unique ID:</label>
+            <input type="text" id="unique_id" name="unique_id" required>
+            <br>
+            <label for="target_url">Target URL:</label>
+            <input type="url" id="target_url" name="target_url" required>
+            <br>
+            <button type="submit">Create/Update QR Code</button>
+        </form>
+        <h2>Existing QR Codes</h2>
+        <ul>
+            {% for unique_id, target_url in all_ids %}
+                <li>
+                    <a href="/edit/{{ unique_id }}">{{ unique_id }}</a> - {{ target_url }}
+                </li>
+            {% endfor %}
+        </ul>
+    </body>
+    </html>
+    ''', all_ids=all_ids)
+
 @app.route('/generate', methods=['POST'])
 def generate_qr():
-    data = request.get_json()
-    if not data or 'unique_id' not in data or 'target_url' not in data:
-        return jsonify({'error': 'Invalid input. Provide unique_id and target_url.'}), 400
-
-    unique_id = data['unique_id']
-    target_url = data['target_url']
+    unique_id = request.form.get('unique_id')
+    target_url = request.form.get('target_url')
 
     if not target_url.startswith(('http://', 'https://')):
         return jsonify({'error': 'Invalid URL. Include http:// or https://'}), 400
@@ -68,55 +104,44 @@ def generate_qr():
     buffer.seek(0)
     return send_file(buffer, mimetype='image/png')
 
+@app.route('/edit/<unique_id>', methods=['GET', 'POST'])
+def edit_qr(unique_id):
+    if request.method == 'POST':
+        # Update the URL for the specified unique_id
+        new_url = request.form.get('target_url')
+        if not new_url.startswith(('http://', 'https://')):
+            return jsonify({'error': 'Invalid URL. Include http:// or https://'}), 400
+        set_target_url(unique_id, new_url)
+        return redirect('/')
+
+    # Show current URL for the unique_id
+    current_url = get_target_url(unique_id)
+    if not current_url:
+        return jsonify({'error': f'No QR Code found for ID {unique_id}'}), 404
+
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head><title>Edit QR Code</title></head>
+    <body>
+        <h1>Edit QR Code for {{ unique_id }}</h1>
+        <form method="post">
+            <label for="target_url">New URL:</label>
+            <input type="url" id="target_url" name="target_url" value="{{ current_url }}" required>
+            <br>
+            <button type="submit">Update QR Code</button>
+        </form>
+        <a href="/">Back to Home</a>
+    </body>
+    </html>
+    ''', unique_id=unique_id, current_url=current_url)
+
 @app.route('/qr/<unique_id>', methods=['GET'])
 def redirect_to_target(unique_id):
-    # Look up the target URL from the database
     target_url = get_target_url(unique_id)
     if not target_url:
         return jsonify({'error': 'No target URL found for this QR code'}), 404
     return redirect(target_url)
-
-@app.route('/', methods=['GET'])
-def home():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head><title>Dynamic QR Code Generator</title></head>
-    <body>
-        <h1>Generate and Manage Dynamic QR Codes</h1>
-        <h2>Create a QR Code</h2>
-        <form id="qrForm">
-            <label for="unique_id">Unique ID:</label>
-            <input type="text" id="unique_id" name="unique_id" required>
-            <br><label for="target_url">Target URL:</label>
-            <input type="url" id="target_url" name="target_url" required>
-            <br><button type="button" onclick="generateQR()">Generate QR Code</button>
-        </form>
-        <div id="result">
-            <h3>Your QR Code:</h3>
-            <img id="qrImage" src="" alt="QR Code will appear here">
-        </div>
-        <script>
-            async function generateQR() {
-                const unique_id = document.getElementById('unique_id').value;
-                const target_url = document.getElementById('target_url').value;
-                const response = await fetch('/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ unique_id: unique_id, target_url: target_url })
-                });
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const imgURL = URL.createObjectURL(blob);
-                    document.getElementById('qrImage').src = imgURL;
-                } else {
-                    alert('Error generating QR Code. Check your input.');
-                }
-            }
-        </script>
-    </body>
-    </html>
-    """
 
 if __name__ == "__main__":
     init_db()
