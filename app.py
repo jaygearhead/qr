@@ -48,6 +48,13 @@ def set_target_url(unique_id, target_url):
     conn.commit()
     conn.close()
 
+def delete_qr_code(unique_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM qr_codes WHERE unique_id = ?', (unique_id,))
+    conn.commit()
+    conn.close()
+
 @app.route('/')
 def home():
     # Show all unique IDs and their associated URLs
@@ -72,7 +79,9 @@ def home():
         <ul>
             {% for unique_id, target_url in all_ids %}
                 <li>
-                    <a href="/edit/{{ unique_id }}">{{ unique_id }}</a> - {{ target_url }}
+                    {{ unique_id }} - {{ target_url }}
+                    <a href="/edit/{{ unique_id }}">Edit</a> |
+                    <a href="/delete/{{ unique_id }}" onclick="return confirm('Are you sure you want to delete this QR Code?');">Delete</a>
                 </li>
             {% endfor %}
         </ul>
@@ -135,6 +144,11 @@ def edit_qr(unique_id):
     </body>
     </html>
     ''', unique_id=unique_id, current_url=current_url)
+
+@app.route('/delete/<unique_id>', methods=['GET'])
+def delete_qr(unique_id):
+    delete_qr_code(unique_id)
+    return redirect('/')
 
 @app.route('/qr/<unique_id>', methods=['GET'])
 def redirect_to_target(unique_id):
