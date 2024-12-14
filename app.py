@@ -1,26 +1,28 @@
-from flask import Flask, request, jsonify, send_file, redirect, render_template_string
+from flask import Flask, request, jsonify, send_file, redirect, render_template_string, url_for
 import qrcode
 from io import BytesIO
 import sqlite3
+import os
 
 app = Flask(__name__)
 
-# SQLite Database File
-DB_FILE = 'qr_codes.db'
+# Database Location (use environment variable for flexibility)
+DB_FILE = os.getenv('QR_CODE_DB', 'qr_codes.db')
 
 # Initialize the Database
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS qr_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            unique_id TEXT UNIQUE,
-            target_url TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    if not os.path.exists(DB_FILE):
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS qr_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                unique_id TEXT UNIQUE,
+                target_url TEXT
+            )
+        ''')
+        conn.commit()
+        conn.close()
 
 # Get All QR Codes
 def get_all_qr_codes():
@@ -63,31 +65,27 @@ def delete_qr_code(unique_id):
 # Generate QR Code
 @app.route('/generate', methods=['POST'])
 def generate_qr():
-    try:
-        data = request.get_json()
-        if not data or 'unique_id' not in data or 'target_url' not in data:
-            return jsonify({'error': 'Invalid input. Provide unique_id and target_url.'}), 400
+    data = request.get_json()
+    if not data or 'unique_id' not in data or 'target_url' not in data:
+        return jsonify({'error': 'Invalid input. Provide unique_id and target_url.'}), 400
 
-        unique_id = data['unique_id']
-        target_url = data['target_url']
+    unique_id = data['unique_id']
+    target_url = data['target_url']
 
-        if not target_url.startswith(('http://', 'https://')):
-            return jsonify({'error': 'Invalid URL. Include http:// or https://'}), 400
+    if not target_url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'Invalid URL. Include http:// or https://'}), 400
 
-        set_target_url(unique_id, target_url)
-        redirect_url = request.host_url + 'qr/' + unique_id
-        qr = qrcode.QRCode()
-        qr.add_data(redirect_url)
-        qr.make(fit=True)
-        img = qr.make_image(fill="black", back_color="white")
+    set_target_url(unique_id, target_url)
+    redirect_url = request.host_url + 'qr/' + unique_id
+    qr = qrcode.QRCode()
+    qr.add_data(redirect_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill="black", back_color="white")
 
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-        buffer.seek(0)
-        return send_file(buffer, mimetype='image/png')
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return send_file(buffer, mimetype='image/png')
 
 # Redirect to Target URL
 @app.route('/qr/<unique_id>', methods=['GET'])
@@ -131,12 +129,24 @@ def list_qr_codes():
             async function editQR(unique_id) {
                 const newURL = prompt("Enter new URL for " + unique_id);
                 if (newURL) {
-                    await fetch(`/edit/${unique_id}`, {
+                    const response = await fetch(`/edit/${unique_id}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ target_url: newURL })
                     });
-                    window.location.reload();
+                    if (response.ok) {
+                        const result = await response.json();
+                        alert(result.message);
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = result.download_url;
+                        downloadLink.textContent = `Download Updated QR Code for ${unique_id}`;
+                        downloadLink.download = `${unique_id}.png`;
+                        document.body.appendChild(downloadLink);
+                        downloadLink.style.display = 'block';
+                        downloadLink.style.marginTop = '10px';
+                    } else {
+                        alert('Error updating QR code.');
+                    }
                 }
             }
             async function deleteQR(unique_id) {
@@ -163,18 +173,6 @@ def edit_qr_code(unique_id):
 
     set_target_url(unique_id, target_url)
 
-    # Generate QR Code
-    redirect_url = request.host_url + 'qr/' + unique_id
-    qr = qrcode.QRCode()
-    qr.add_data(redirect_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill="black", back_color="white")
-
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-
-    # Provide the QR code as a downloadable link
     qr_code_url = url_for('download_qr', unique_id=unique_id, _external=True)
     return jsonify({
         'message': f'QR code for {unique_id} updated successfully.',
