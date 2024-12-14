@@ -191,7 +191,7 @@ def home():
         <h2><a href="/list">View All QR Codes</a></h2>
         <div id="result">
             <h3>Your QR Code:</h3>
-            <img id="qrImage" src="" alt="QR Code will appear here">
+            <img id="qrImage" style="display:none;" alt="QR Code">
         </div>
         <script>
             async function generateQR() {
@@ -205,7 +205,9 @@ def home():
                 if (response.ok) {
                     const blob = await response.blob();
                     const imgURL = URL.createObjectURL(blob);
-                    document.getElementById('qrImage').src = imgURL;
+                    const qrImage = document.getElementById('qrImage');
+                    qrImage.src = imgURL;
+                    qrImage.style.display = 'block';
                 } else {
                     alert('Error generating QR Code.');
                 }
