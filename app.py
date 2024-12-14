@@ -150,7 +150,7 @@ def list_qr_codes():
     </html>
     ''', qr_codes=qr_codes)
 
-# Edit QR Code
+# Edit QR Code and Provide Download Link
 @app.route('/edit/<unique_id>', methods=['POST'])
 def edit_qr_code(unique_id):
     data = request.get_json()
@@ -162,7 +162,38 @@ def edit_qr_code(unique_id):
         return jsonify({'error': 'Invalid URL. Include http:// or https://'}), 400
 
     set_target_url(unique_id, target_url)
-    return jsonify({'message': f'QR code for {unique_id} updated successfully.'}), 200
+
+    # Generate QR Code
+    redirect_url = request.host_url + 'qr/' + unique_id
+    qr = qrcode.QRCode()
+    qr.add_data(redirect_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill="black", back_color="white")
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    # Provide the QR code as a downloadable link
+    qr_code_url = url_for('download_qr', unique_id=unique_id, _external=True)
+    return jsonify({
+        'message': f'QR code for {unique_id} updated successfully.',
+        'download_url': qr_code_url
+    }), 200
+
+# Download QR Code
+@app.route('/download/<unique_id>', methods=['GET'])
+def download_qr(unique_id):
+    redirect_url = request.host_url + 'qr/' + unique_id
+    qr = qrcode.QRCode()
+    qr.add_data(redirect_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill="black", back_color="white")
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return send_file(buffer, mimetype='image/png', as_attachment=True, download_name=f"{unique_id}.png")
 
 # Delete QR Code
 @app.route('/delete/<unique_id>', methods=['POST'])
