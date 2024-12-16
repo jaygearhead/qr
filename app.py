@@ -1,5 +1,3 @@
-# testing db overwrite on build
-
 from flask import Flask, request, jsonify, send_file, redirect, render_template_string, url_for
 import qrcode
 from io import BytesIO
@@ -8,8 +6,9 @@ import os
 
 app = Flask(__name__)
 
-# Database Location (use environment variable for flexibility)
-DB_FILE = os.getenv('QR_CODE_DB', 'qr_codes.db')
+# Database Location
+PERSISTENT_STORAGE = os.getenv('PERSISTENT_STORAGE', '.')
+DB_FILE = os.path.join(PERSISTENT_STORAGE, 'qr_codes.db')
 
 # Initialize the Database
 def init_db():
@@ -139,13 +138,7 @@ def list_qr_codes():
                     if (response.ok) {
                         const result = await response.json();
                         alert(result.message);
-                        const downloadLink = document.createElement('a');
-                        downloadLink.href = result.download_url;
-                        downloadLink.textContent = `Download Updated QR Code for ${unique_id}`;
-                        downloadLink.download = `${unique_id}.png`;
-                        document.body.appendChild(downloadLink);
-                        downloadLink.style.display = 'block';
-                        downloadLink.style.marginTop = '10px';
+                        window.location.reload();
                     } else {
                         alert('Error updating QR code.');
                     }
@@ -162,7 +155,7 @@ def list_qr_codes():
     </html>
     ''', qr_codes=qr_codes)
 
-# Edit QR Code and Provide Download Link
+# Edit QR Code
 @app.route('/edit/<unique_id>', methods=['POST'])
 def edit_qr_code(unique_id):
     data = request.get_json()
@@ -174,32 +167,7 @@ def edit_qr_code(unique_id):
         return jsonify({'error': 'Invalid URL. Include http:// or https://'}), 400
 
     set_target_url(unique_id, target_url)
-
-    qr_code_url = url_for('download_qr', unique_id=unique_id, _external=True)
-    return jsonify({
-        'message': f'QR code for {unique_id} updated successfully.',
-        'download_url': qr_code_url
-    }), 200
-
-# Download QR Code
-@app.route('/download/<unique_id>', methods=['GET'])
-def download_qr(unique_id):
-    redirect_url = request.host_url + 'qr/' + unique_id
-    qr = qrcode.QRCode()
-    qr.add_data(redirect_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill="black", back_color="white")
-
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-    return send_file(buffer, mimetype='image/png', as_attachment=True, download_name=f"{unique_id}.png")
-
-# Delete QR Code
-@app.route('/delete/<unique_id>', methods=['POST'])
-def delete_qr(unique_id):
-    delete_qr_code(unique_id)
-    return jsonify({'message': f'QR code for {unique_id} deleted successfully.'}), 200
+    return jsonify({'message': f'QR code for {unique_id} updated successfully.'}), 200
 
 # Home Page
 @app.route('/', methods=['GET'])
